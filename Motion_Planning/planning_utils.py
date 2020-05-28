@@ -1,7 +1,7 @@
 from enum import Enum
 from queue import PriorityQueue
 import numpy as np
-
+from shapely.geometry import Polygon, Point
 
 def create_grid(data, drone_altitude, safety_distance):
     """
@@ -55,6 +55,10 @@ class Action(Enum):
     EAST = (0, 1, 1)
     NORTH = (-1, 0, 1)
     SOUTH = (1, 0, 1)
+    DIAGLU = (-1,-1, 1.41421)
+    DIAGUR = (-1,1,1.41421)
+    DIAGRD = (1,1,1.41421)
+    DIAGDL = (1,-1,1.41421)
 
     @property
     def cost(self):
@@ -85,6 +89,15 @@ def valid_actions(grid, current_node):
     if y + 1 > m or grid[x, y + 1] == 1:
         valid_actions.remove(Action.EAST)
 
+    if x - 1 < 0 or y - 1 < 0  or grid[x-1, y-1] == 1:
+        valid_actions.remove(Action.DIAGLU)
+    if x - 1 < 0 or y + 1 > m  or grid[x-1, y+1] == 1:
+        valid_actions.remove(Action.DIAGUR)
+    if x + 1 > n or y + 1 > m or grid[x+1, y+1] == 1:
+        valid_actions.remove(Action.DIAGRD)
+    if x + 1 > n or y -1 < 0 or grid[x+1, y-1] == 1:
+        valid_actions.remove(Action.DIAGDL)
+
     return valid_actions
 
 
@@ -98,17 +111,25 @@ def a_star(grid, h, start, goal):
 
     branch = {}
     found = False
-    
+    # n = 16.0
     while not queue.empty():
         item = queue.get()
         current_node = item[1]
+
+        # if (int(current_node[0]),int(current_node[0])) == (int(goal[0]/n), int(goal[1]/n)):
+        #     print(queue.qsize())
+        #     n = n - 2
+        print('Size of queue %.2d\r'%(queue.qsize()), end="")
+
         if current_node == start:
             current_cost = 0.0
         else:              
             current_cost = branch[current_node][0]
             
         if current_node == goal:        
+            print('**********************')
             print('Found a path.')
+            print('**********************') 
             found = True
             break
         else:
@@ -142,5 +163,66 @@ def a_star(grid, h, start, goal):
 
 
 def heuristic(position, goal_position):
-    return np.linalg.norm(np.array(position) - np.array(goal_position))
+    return np.linalg.norm(np.array(position) - np.array(goal_position)) * 1.2
 
+def point_p(p):
+    return np.array([p[0], p[1], 1.]).reshape(1, -1)
+
+def collinearity_check(p1, p2, p3, epsilon=1e-6):   
+    m = np.concatenate((p1, p2, p3), 0)
+    det = np.linalg.det(m)
+    return abs(det) < epsilon
+
+def prune_path(path, collinearity_check, point_p):
+    pruned_path = [p for p in path]
+    # TODO: prune the path!
+    
+    i = 0
+    while i < len(pruned_path) - 2:
+        p1 = point_p(pruned_path[i])
+        p2 = point_p(pruned_path[i+1])
+        p3 = point_p(pruned_path[i+2])
+        
+        if collinearity_check(p1, p2, p3):
+            pruned_path.remove(pruned_path[i+1])
+        else:
+            i += 1
+    return pruned_path
+
+def extract_polygons(data):
+
+    polygons = []
+    for i in range(data.shape[0]):
+        north, east, alt, d_north, d_east, d_alt = data[i, :]
+        
+        # TODO: Extract the 4 corners of the obstacle
+        # 
+        # NOTE: The order of the points matters since
+        # `shapely` draws the sequentially from point to point.
+        #
+        # If the area of the polygon is 0 you've likely got a weird
+        # order.
+        corners = [(north - d_north, east - d_east), 
+                   (north - d_north, east + d_east),
+                   (north + d_north, east + d_east),
+                   (north + d_north, east - d_east)]
+        
+        # TODO: Compute the height of the polygon
+        height = alt + d_alt
+
+        # TODO: Once you've defined corners, define polygons
+        p = Polygon(corners)
+        polygons.append((p, height))
+
+    return polygons
+
+def collides(polygons, point):   
+    # TODO: Determine whether the point collides
+    # with any obstacles.
+    #     if polygons[0][0].contains(Point(point[0],point[1])):
+    #         if polygons[1] > point[2]:
+    #             return True
+    for (p, height) in polygons:
+        if p.contains(Point(point)) and height >= point[2]:
+            return True
+    return False
