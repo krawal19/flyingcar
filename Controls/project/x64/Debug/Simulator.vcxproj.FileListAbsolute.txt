@@ -1,0 +1,2 @@
+D:\Spring 2020\courses\Controls\FCND-Controls-CPP\project\x64\Debug\Simulator.exe
+D:\Spring 2020\courses\Controls\FCND-Controls-CPP\project\x64\Debug\Simulator.pdb
